@@ -1,2 +1,3 @@
 *.Rmd linguist-language=R
 MACB_bonus_files/* linguist-documentation
+MACB_Bonus.html linguist-vendored
