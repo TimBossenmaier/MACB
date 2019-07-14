@@ -1,0 +1,1072 @@
+---
+title: "Bonus Assignment: Modelling and Analysing Consumer Behaviour"
+
+csl: apa.csl
+output:
+  html_document: default
+  pdf_document: default
+bibliography: bibliography.bibtex
+editor_options: 
+  chunk_output_type: inline
+---
+```{r eval=FALSE, include=FALSE}
+[Markdown cheat-sheet](https://github.com/adam-p/markdown-here/wiki/Markdown-Cheatsheet)
+```
+<br/>
+<br/>
+**Abstract.** In this R notebook, we document our findings of the flow analysis conducted on the data sets provided. Flow seems to be mainly dictated by emotional valence and motivation. However, our analysis indicates that Flow can also occur in a state of (deep) relexation.
+
+<br/>
+
+### Exercise 01 - Importance of Notebooks in Reproducible Research
+With various trends emerging in the area of computer science, e.g. Big Data, Data Mining or Data Science in general,
+new tools and technologies processing massive amounts of data gain rapidly in importance in nearly every field of science. 
+For comprehensive data analyses and research, replication and traceability are corner pillars of working with algorithms or software tools. 
+As a consequence, both a detailed description of the results and a clear protocol are necessary to allow repetition and extension of analyses based on the original data. Otherwise a full replication of study is not possible [@Sandve13]. This documentation should include both a human-readable and a machine-readable version containing information about the data, software and hardware used. Computational notebooks, e.g. Jupyter or R notebooks, contain executable code, rendered visualizations, and text in a single, portable document, meeting the above requirements. Providing a notebook to create value for other researchers requires some more than just publishing pure code. As mentioned above traceability is key, therefore you should put a strong emphasis on telling a story and documenting your process how you achieved your results instead of just presenting them. Even for stochastic processes reproducibility can be ensured by using seed values. Additionally, the use of version control technologies like git allow both a better traceability of work progress and collaborative working on code [@Rule18]. As a plus, if the code is written in generalized form, you enable other researchers to re-use your work and benefit from your skills. Especially for the programming languages Python and R many libraries are open source and have their origins in such an approach. To sum up, the use of notebooks provides a lot of advantages for both the authors and other researches. Hence, it is no surprise that this kind of working approach enjoys enormous growth since 2014 as you can see in Figure 1.
+
+
+
+![number](number_of_notebooks.png)
+<br/>
+ Fig. 1: number of computational notebooks since 2014 on the code sharing platform Github, own representation according to @Parente19
+ 
+<br/>
+<br/>
+
+### Exercise 02 - Data understanding and data preparation
+
+<br/>
+
+#### 2.1) Preliminaries
+First, we need to set up for our analysis by loading libraries: 
+We use `C50`, `clusterMixType`, `corrplot`, `dplyr`, `Formula`, `fpc`, `ggplot2`, `Hmisc`, `klaR`, `lattice`, `psych`, `Rfast`, `rpart`, `rpart.plot`, `survival`, `vegan`.
+
+
+```{r message=FALSE, include=FALSE}
+# import libraries
+library(psych)
+library(lattice)
+library(survival)
+library(Formula)
+library(Hmisc)
+library(corrplot)
+library(ggplot2)
+library(vegan)
+library(fpc)
+library(clustMixType)
+library(klaR)
+library(dplyr)
+library(C50)
+library(rpart)       # performing regression trees
+library(rpart.plot)  # plotting regression trees
+library(Rfast)
+```
+<br/>
+
+#### 2.2) Data Cleaning
+
+We first take care of incomplete and unnecessary data. 
+Then, we will aggregate construct and personality data such that we can use them for our analysis:
+<p>
+a) We remove rows without validity. 
+This is data that is not associated to any participant, or not referencing a when the information has been captured (typeLogic <- 'Start', 'Round' or 'End' of experiment).
+b) We delete incomplete surveys, i.e. the ones with less than ten instances (rows).
+c) We aggregate construct variables: flow, stress, motivation, importance of task, and trait of intrinsic motivation.
+d) We aggregate personality variables: extraversion, aggreeableness, conscientiousness, neuroticism, and openness
+e) We delete variables that aren't needed for our analysis.
+```{r}
+# import experiment data
+daten <- read.csv("./data/bonusTaskSS2019-reports.csv")
+
+# a) remove rows without validity
+daten %>% 
+  subset(participantID != "") %>% 
+  subset(TypeLogic != "") -> daten
+
+
+# b) delete incomplete surveys
+# return survey only if ten rows/instances are associated
+daten %>% 
+  split(.$participantID) %>%
+  lapply(function(x) { if(nrow(x)==10) return(x) }) %>%
+  do.call("rbind", .)  -> daten
+
+
+
+# c) aggregate construct variables:
+#     for each:
+#       - compute mean values 
+#       - add means as new aggregation varibale to dataset
+#       - delete underlying variables
+
+daten %>%
+  dplyr::select(starts_with("Flow_")) %>%
+  rowMeans()  -> daten$Flow
+
+daten %>% 
+  dplyr::select(starts_with("Stress_")) %>%
+  rowMeans() -> daten$Stress
+
+daten %>%
+  dplyr::select(starts_with("Motivation_")) %>%
+  rowMeans() -> daten$Motivation
+
+daten %>%
+  dplyr::select(starts_with("TaskImportance_")) %>%
+  rowMeans() -> daten$TaskImportance
+
+daten %>%
+  dplyr::select(starts_with("TraitIntrinsicMotivation_")) %>%
+  rowMeans() -> daten$TraitIntrinsicMotivation
+
+# d) aggregate personality variables:
+#     for each:
+#       - compute mean values 
+#       - add means as new aggregation varibale to dataset
+
+daten %>%
+  dplyr::select(starts_with("Personality_Extraversion_")) %>%
+  rowMeans()  -> daten$Personality_Extraversion
+
+daten %>%
+  dplyr::select(starts_with("Personality_Agreeableness_")) %>%
+  rowMeans()  -> daten$Personality_Agreeableness
+
+daten %>%
+  dplyr::select(starts_with("Personality_Conscientiousness_")) %>%
+  rowMeans()  -> daten$Personality_Conscientiousness
+
+daten %>%
+  dplyr::select(starts_with("Personality_Neuroticism_")) %>%
+  rowMeans()  -> daten$Personality_Neuroticism
+
+daten %>%
+  dplyr::select(starts_with("Personality_Openness_")) %>%
+  rowMeans()  -> daten$Personality_Openness
+
+# e) delete unnecessary variables 
+daten <- dplyr::select(daten, -startlanguage, -lastpage, -starts_with("Flow_"), -starts_with("Stress_"), -starts_with("Motivation_"), -starts_with("TaskImportance_"), -starts_with("TraitIntrinsicMotivation_"), -starts_with("Personality_Extraversion_"), -starts_with("Personality_Agreeableness_"), -starts_with("Personality_Conscientiousness_"), -starts_with("Personality_Neuroticism_"), -starts_with("Personality_Openness_") )
+```
+<br/>
+
+#### 2.3) Analysing for Outliers
+
+An important part of the data cleaning is the outlier detection and replacement. We decided to replace all detected outliers with their mean value. Because we could not finde so much outliers in the intresting variables, we only show one expample of each methode. The other calculations can be finde in the notebook and are not explicitly shown here.
+
+First we take a look at the variable `Motivation`. We can spot an outlier in the bottom of the boxplot. To fix this, we use the 2 SD methode (as recommanded in the exercise) to identify this outliere and replace it with the mean of the variable `Motivation`. For the variable `TaskDemands` we used the same methode.
+```{r}
+boxplot(daten$Motivation)
+daten$Motivation <- replace(daten$Motivation , daten$Motivation > (mean(daten$Motivation, na.rm = TRUE)+(2*(sd(daten$Motivation, na.rm = TRUE)))), mean(daten$Motivation, na.rm = TRUE))
+daten$Motivation <- replace(daten$Motivation , daten$Motivation < (mean(daten$Motivation, na.rm = TRUE)-(2*sd(daten$Motivation, na.rm = TRUE))), mean(daten$Motivation, na.rm = TRUE))
+```
+
+<br/>
+
+***
+
+Now we focus on the next variable: `PerformanceSatisfaction`. We cannot see any outliers in the boxplot, but the range of the variabel is really high. Therefore we have to use the 1,5 IQR methode to reduce the dispersion of the variable. We applied this methode for the variables `Flow`, `TaskDifficulty` and `TaskSkill`. Please take a further look at the notebook to see these calulations.
+
+```{r}
+boxplot(daten$PerformanceSatisfaction)
+
+daten$PerformanceSatisfaction <- replace (daten$PerformanceSatisfaction, daten$PerformanceSatisfaction > ((quantile(daten$PerformanceSatisfaction, 0.75, na.rm = TRUE, names = FALSE)) + (1.5*((quantile(daten$PerformanceSatisfaction, 0.75, na.rm = TRUE, names = FALSE)) - (quantile(daten$PerformanceSatisfaction, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$PerformanceSatisfaction, na.rm = TRUE)))
+
+daten$PerformanceSatisfaction <- replace(daten$PerformanceSatisfaction, daten$PerformanceSatisfaction < ((quantile(daten$PerformanceSatisfaction, 0.25, na.rm = TRUE, names =FALSE)) - (1.5*((quantile(daten$PerformanceSatisfaction, 0.75, na.rm = TRUE, names = FALSE)) - (quantile(daten$PerformanceSatisfaction, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$PerformanceSatisfaction, na.rm = TRUE)))
+```
+<br/>
+  
+```{r include=FALSE}
+#Replace outliers from Flow with 1,5*IQR (Meanreplacement)
+boxplot(daten$Flow)
+
+daten$Flow <- replace (daten$Flow, daten$Flow > ((quantile(daten$Flow, 0.75, na.rm = TRUE, names =FALSE)) + (1.5*((quantile(daten$Flow, 0.75, na.rm = TRUE, names =FALSE)) - (quantile(daten$Flow, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$Flow, na.rm = TRUE)))
+daten$Flow <- replace(daten$Flow, daten$Flow < ((quantile(daten$Flow, 0.25, na.rm = TRUE, names =FALSE)) - (1.5*((quantile(daten$Flow, 0.75, na.rm = TRUE, names = FALSE)) - (quantile(daten$Flow, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$Flow, na.rm = TRUE)))
+```
+<br/>
+
+***
+
+Finaly we tried to detect outliers with the regression based approach for personal interest. Therefore we used the Least Square methode: Everything outside of 3 sigma is declared as an outlier for the variable `EmoValence`.
+Sadly there was no outlier to handle for us.
+```{r echo=TRUE}
+plot(daten$EmoValence ~ daten$Flow)
+reg.model <- lm(daten$EmoValence ~ daten$Flow)
+abline(a=reg.model$coefficicients[1], b=reg.model$coefficicients[2])
+head(reg.model$residuals/summary(reg.model)$sigma)
+```
+<br/>
+```{r include=FALSE}
+#Remove all outliers from taskDifficulty with 1,5*IQR 
+boxplot(daten$TaskDifficulty)
+
+daten$TaskDifficulty <- replace (daten$TaskDifficulty, daten$TaskDifficulty > ((quantile(daten$TaskDifficulty, 0.75, na.rm = TRUE, names =FALSE)) + (1.5*((quantile(daten$TaskDifficulty, 0.75, na.rm = TRUE, names =FALSE)) - (quantile(daten$TaskDifficulty, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$TaskDifficulty, na.rm = TRUE)))
+daten$TaskDifficulty <- replace(daten$TaskDifficulty, daten$TaskDifficulty < ((quantile(daten$TaskDifficulty, 0.25, na.rm = TRUE, names =FALSE)) - (1.5*((quantile(daten$TaskDifficulty, 0.75, na.rm = TRUE, names = FALSE)) - (quantile(daten$TaskDifficulty, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$TaskDifficulty, na.rm = TRUE)))
+```
+```{r include=FALSE}
+#Remove all outliers from taskSkill with 1,5*IQR
+boxplot(daten$TaskSkill)
+
+daten$TaskSkill <- replace (daten$TaskSkill, daten$TaskSkill > ((quantile(daten$TaskSkill, 0.75, na.rm = TRUE, names =FALSE)) + (1.5*((quantile(daten$TaskSkill, 0.75, na.rm = TRUE, names =FALSE)) - (quantile(daten$TaskSkill, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$TaskSkill, na.rm = TRUE)))
+daten$TaskSkill <- replace(daten$TaskSkill, daten$TaskSkill < ((quantile(daten$TaskSkill, 0.25, na.rm = TRUE, names =FALSE)) - (1.5*((quantile(daten$TaskSkill, 0.75, na.rm = TRUE, names = FALSE)) - (quantile(daten$TaskSkill, 0.25, na.rm = TRUE, names =FALSE))))), (mean(daten$TaskSkill, na.rm = TRUE)))
+```
+
+```{r include=FALSE}
+boxplot(daten$TaskDemands)
+
+# Replace outliers from taskDemands with 2 SD with Mean
+daten$TaskDemands <- replace(daten$TaskDemands , daten$TaskDemands > (mean(daten$TaskDemands, na.rm = TRUE)+(2*(sd(daten$TaskDemands, na.rm = TRUE)))), mean(daten$TaskDemands, na.rm = TRUE))
+daten$TaskDemands <- replace(daten$TaskDemands , daten$TaskDemands < (mean(daten$TaskDemands, na.rm = TRUE)-(2*sd(daten$TaskDemands, na.rm = TRUE))), mean(daten$TaskDemands, na.rm = TRUE))
+
+boxplot(daten$TaskDemands)
+```
+<br/>
+**Exploring some more:** <br/>
+While cleaning the data, we thought of other possible ways, how data could be unsuitable for analysis. 
+One idea was to check if a participant took outstandingly long to complete a task. 
+In this case, maybe the task was unclear to them or something threw them off.
+That data would be uncomparable to the others (or so we thought at first).
+However, we decided to keep the data with regard a future analysis of the participants flow.
+The indication of being thrown off or being unsure hints at the participant not getting into "the flow".
+```{r echo=FALSE}
+daten %>%
+  filter(TypeLogic=="ROUND") %>%
+  plot(x=.$StateLogic, y=.$interviewtime..Gesamtzeit, xlab = "StateLogic", ylab = "Time")
+```
+<br/>
+<br/>
+
+<p>
+
+#### 2.4) Interesting Variables and Findings
+
+To detect intresting variables for our analysis, we look at the correlation among them.
+Due to flow being the main focus of the experiment, we look at variables that correlate with flow (|r|>0,4 and p < 0,01).
+
+```{r}
+corr <- data.frame()
+corr_single <- rcorr(daten$Flow, daten$Stress, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$Motivation, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$Perfomance, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$MentalEffort, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$EmoValence, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$EmoArousal, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$TaskDifficulty, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$TaskSkill, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$TaskDemand, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr_single <- rcorr(daten$Flow, daten$PerformanceSatisfaction, type = "pearson")
+corr <- rbind(corr, c(corr_single$r[1,2],corr_single$P[1,2]))
+corr <- cbind(c("Stress", "Motivation", "Performance", "MentalEffort", "EmoValence", "EmoArousal", "TaskDifficulty", "TaskSkill", "TaskDemand", "PerformanceSatisfaction"), corr)
+colnames(corr) = c("Flow to variable","pearson", "p-value")
+corr_single <- NULL
+rm(corr_single)
+corr
+```
+<br/>
+Thus choosen variables: `Motivation`, `PerformanceSatisfaction`, `Flow`, `EmotionalValence`, `TaskDifficulty`, `TaskSkill`
+<p>
+
+```{r include=FALSE}
+# Restructure our data: Personality data and Round data
+daten %>%
+  dplyr::filter(TypeLogic=="END", T) %>%
+  dplyr::select(participantID, TraitIntrinsicMotivation, starts_with("Personality_")) -> daten.personality
+
+daten %>%
+  dplyr::filter(TypeLogic=="ROUND", T) %>% # This leaves END_TASK where importance is measured out!
+  dplyr::filter(StateLogic != "START", T) %>% # This leaves START (where emoVal und emoArous a datapoint) out!
+  dplyr::select(-responseID, -submitdate, -startdate,-TypeLogic, -TaskDemands, -DoItAgain,-interviewtime..Gesamtzeit,-TraitIntrinsicMotivation, -starts_with("Personality_"), -TaskImportance, -Stress, -MentalEffort) -> daten.task
+```
+<br/>
+**Exploring: Advanced Eye-Balling** <br/>
+We investigate three questions: <br/>
+ 1. How does a participants emotional state affect `Flow`? <br/>
+ 2. Does Task Skill/Difficulty affect `Flow`? <br/>
+ 3. Does Flow lead to a higher `PerformanceSatsifaction` ? <br/>
+<br/>
+*1) How does a participants emotional state affect Flow?*
+<br/>
+```{r echo=FALSE}
+# plot 0
+ggplot(daten.task) + 
+  geom_point(aes(x=EmoValence, y=EmoArousal, color=Flow, size=Motivation)) + 
+  geom_hline(aes(yintercept = 4.5)) +
+  geom_vline(aes(xintercept = 4.5)) 
+```
+<br/>
+
+Motivation seems to be pretty high across the board, except for when the `EmotionalArousal` and `EmotionalValence` are both low (== state of fatigue).
+We can say that `Flow` seems to occur, not only when there is a high arousal and valence (and thus motivation), but also when there is low arousal.
+This indicates that `Flow` also occurs in a state of relaxation (having a positive valence, i.e. not boredom)!
+<p>
+Backing this up: <br/>
+  high `EmotionalValence` and high `Flow` seem to occur together, with `Motivation` joining them as a third positive correlated variable.<br/>
+  At the same time `EmotionalArousal` is low as well as high, indicating that `Flow` is not only possible in highly engaging situation but also during relaxation!<br/>
+```{r echo=FALSE}
+# plot 2
+ggplot(daten.task) + geom_point(aes(x=Flow, y=EmoValence, color=Motivation, size=EmoArousal))
+```
+ 
+
+
+```{r eval=FALSE, include=FALSE}
+Consider the following Figure from [@Emo04] ( which is actually Figure 2 - getting it directly from the web.) <br/> 
+![EmoArousal and EmoValence](https://conversionxl.com/wp-content/uploads/2015/10/Screen-Shot-2015-10-12-at-8.52.02-PM-568x416-1.jpg) 
+Fig. 2: Emotional Arousal and Valence <br/>
+```
+<br/>
+
+*2) Does Task Skill/Difficulty affect Flow?* <br/> 
+Looking at the plot:
+4th quadrant - Anxiety: Difficulty exceeds Skill, leading to low `EmotionalValence`, `Motivation`, and thus `Flow.`<br/> 
+Skill-Challenge-Balance (1st and 3rd quadrant, as well as center): When skill and difficulty are balanced or skill is perceived slightly higher than the difficulty, we observe a high `EmotionalValence`. By eye, we can't make an assumption on `Flow` here, though.
+2nd quadrant - Relaxation: `Flow` can occur, but when skill slightly exceeds difficulty. That is, when also `EmotionalValence` is high (and not to be seen here, but it is: when `EmotionalArousal` is low). 
+Hoever, when skill exceeds difficulty at large, `EmotionalValence` is low (and motivation drops), thus leading to boredom instead of relaxation (with a positive valence) and `Flow`.
+<br/>
+
+```{r echo=FALSE}
+# plot 1
+ggplot(daten.task) + 
+  geom_hline(aes(yintercept = 4)) +
+  geom_vline(aes(xintercept = 4)) +
+  geom_point(aes(x=TaskSkill, y=TaskDifficulty, color=Flow, size=EmoValence)) 
+```
+  
+```{r eval=FALSE, include=FALSE}
+![Four Quadrant Model](https://www.uni-trier.de/fileadmin/fb1/prof/PSY/PGA/bilder/Engeser___Rheinberg_2008.pdf) 
+```
+<br/>
+
+Backing the boredom vs. relaxation assumption:<br/>
+When the task at hand seems to be just a bit too difficult for a participant's skill, most of the data seem to cluster at a high `Motivation` and `Flow` (== stepping your game up, == outperform yourself)
+On the other hand, when task deemed to difficult for ones skill, `Motivation` and `Flow` are low (although the performance satisfaction is high afterwards == pushing hard to get through)
+  
+```{r echo=FALSE}
+# plot 3
+ggplot(daten.task) + geom_hline(yintercept = 0) + geom_point(aes(x=Flow, y=scale(TaskSkill/TaskDifficulty), size=PerformanceSatisfaction, color=Motivation)) 
+```
+<br/>
+  
+*3) Does Flow lead to a higher Performance Satsifaction?*<br/>
+`PerformanceSatisfaction` seems to rise with skill, but that seems to have not so much to do with flow
+high skill compared to the challenge seems to demotivate people -> boredom
+
+```{r echo=FALSE}
+# plot 4
+ggplot(daten.task) + geom_point(aes(x=PerformanceSatisfaction, y=Motivation, color=Flow, size=scale(TaskSkill/TaskDifficulty)))
+```
+<br/>
+
+<p>
+
+#### 2.5) Preparation for Comparisons
+Prepare data for comparison with additional data (heart rates dataset). We only take the data for the tasks one and two (without the start).
+<br/>
+Now we have to add one variable to match the to different datasets to each other. The variabel `StateOrder` determines the order of the rounds. 
+In the original dataset, this was given by the timestamps. Since we preserved the order of the rounds, simply:
+```{r}
+daten.task$StateOrder <- c(1,2,3)
+head(daten.task)
+```
+<br/>
+
+
+
+
+### Exercise 03 - Heart Data
+
+```{r echo=FALSE}
+data_hearts  <- read.csv("./data/bonusTaskSS2019-hearts-corrected.csv")
+```
+
+
+Taking a first look on the dataset, regarding its columns:
+```{r echo=FALSE}
+head(data_hearts)
+```
+A description of the data captured is provided:
+
+Column        | Description | Comment
+------------- | ----------- | --------
+SeqID         | a measuring point during the experiment round | starts at 10 for each StateOrder-StateLogic-combination
+RRIntervals   | Raw Inter-Beat-Intervals (IBIs) | time in ms since the last heartbeat
+participantID | id of the participant |
+StateOrder    | order of the rounds per task | e.g. 1,2,3
+StateLogic    | task at hand |
+MvgAvgIBIs    | 10 s moving average inter-beat interval |
+MvgAvgHRs     | 10 s moving average heart rate | as beats per minute (BPM)
+
+***
+#### 3.1) Cleaning
+Looking at our participants: We see, that participants F and G are missing. We exclude these participants from the comparison.
+```{r echo=TRUE}
+unique(data_hearts$participantID) # we see that participants F and G  are missing
+daten.task %>%
+  filter(participantID!="F" & participantID!="G") -> daten.compare # exclude them from comparison
+```
+
+  
+***
+Further, there are variables describing the experiments tasks. We see, that Task 1 and 2 were carried out 3 times respectively, as indicated by the report data.
+```{r echo=FALSE}
+#we see that there were 3 rounds of task 1 & 2 respectively
+data_hearts %>% 
+  group_by(StateLogic,StateOrder) %>% 
+  count %>%
+  setNames(c("StateLogic", "StateOrder", "Captured data points"))
+
+```
+   However, the varying counts suggest, that there is some data missing.
+   
+```{r echo=FALSE}
+data_hearts %>% 
+  dplyr::select(participantID, StateOrder, StateLogic) %>% 
+  unique %>% 
+  group_by(participantID,StateOrder) %>% 
+  count  %>%
+  group_by(participantID, n) %>%
+  count %>%
+   setNames(c("participantID", "task count", "round count"))
+```
+This shows, that data is not actually missing, but it seems that the time to complete the tasks varies.
+
+***
+#### 3.2) Exploring
+
+Moving to the "actual" measured data: Looking at the heart rates (HRs).
+We see, that there seems to be varying variance in the heart rates for different rounds for both tasks. 
+For example, we see for participant B, that for Task 1 in round 2 the heart rate was much more constant than for round 1 or 3.
+The same seems to be the case for round 1 of Task 2.
+
+```{r}
+
+# just look at B
+data_hearts %>%
+  filter(participantID=="B" & StateLogic=="TASK_ONE") %>%
+  .[order(.$StateOrder),] %>%
+  mutate(order =  1:nrow(.)) %>%
+  ggplot(aes(x=order, y=MvgAvgHRs, color=StateOrder)) + geom_path(size=1.0)
+
+data_hearts %>%
+  filter(participantID=="B" & StateLogic=="TASK_TWO") %>%
+  .[order(.$StateOrder),] %>%
+  mutate(order =  1:nrow(.)) %>%
+  ggplot(aes(x=order, y=MvgAvgHRs, color=StateOrder)) + geom_path(size=1.0)
+
+```
+
+
+<br>
+
+#### 3.3) Aggregating
+
+To compare the heart data with the experiment data from exercise 2, they must be aggregated along `participantID`, `StateOrder`and `StateLogic`. In aggregated form, the data should include information about several statistical measures (`mean`, `median`, and `variance`).
+```{r warning=FALSE}
+#aggregate the data for each statistical measure
+data_mean <- aggregate(data_hearts$MvgAvgHRs, by = list(participantID = data_hearts$participantID, StateOrder = data_hearts$StateOrder, StateLogic = data_hearts$StateLogic),FUN = mean )
+
+data_var <- aggregate(data_hearts$MvgAvgHRs, by = list(participantID = data_hearts$participantID, StateOrder = data_hearts$StateOrder, StateLogic = data_hearts$StateLogic),FUN = var )
+
+data_med <- aggregate(data_hearts$MvgAvgHRs, by = list(participantID = data_hearts$participantID, StateOrder = data_hearts$StateOrder, StateLogic = data_hearts$StateLogic),FUN = median )
+
+#name the columns accordingly 
+names(data_mean)[names(data_mean) == "x"] <- "MvgAvgHRs_mean"
+names(data_var)[names(data_var) == "x"] <- "MvgAvgHRs_var"
+names(data_med)[names(data_med) == "x"] <- "MvgAvgHRs_median"
+
+#merge dataframes to one
+data_hearts_agg <- merge(data_mean,data_var, by = c("participantID","StateOrder","StateLogic"))
+data_hearts_agg <- merge(data_hearts_agg,data_med, by =c("participantID","StateOrder","StateLogic"))
+daten.compare <- merge(daten.compare, data_hearts_agg,  by = c("participantID","StateLogic", "StateOrder"))
+colnames(daten.compare)
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+daten.compare %>%
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$Flow, .$MvgAvgHRs_median))) -> corr_hearts
+
+daten.compare %>%
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$Flow, .$MvgAvgHRs_var))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$Motivation, .$MvgAvgHRs_median))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$Motivation, .$MvgAvgHRs_var))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$PerformanceSatisfaction, .$MvgAvgHRs_median))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$PerformanceSatisfaction, .$MvgAvgHRs_var))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$EmoArousal, .$MvgAvgHRs_median))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$EmoArousal, .$MvgAvgHRs_var))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$EmoValence, .$MvgAvgHRs_median))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+daten.compare %>% 
+  group_by(participantID) %>%
+  do(as.data.frame(cor(.$EmoValence, .$MvgAvgHRs_var))) %>%
+  merge(corr_hearts, by = c("participantID")) -> corr_hearts
+
+corr_hearts %>%
+  plyr::rename(c("cor(.$EmoValence, .$MvgAvgHRs_var)"= "r(EmoVal, HR_Var)",
+            "cor(.$EmoValence, .$MvgAvgHRs_median)" = "r(EmoVal, HR_Med)",
+            "cor(.$EmoArousal, .$MvgAvgHRs_var)" = "r(EmoAr, HR_Var)",
+            "cor(.$EmoArousal, .$MvgAvgHRs_median)" = "r(EmoAr, HR_Med)",
+            "cor(.$PerformanceSatisfaction, .$MvgAvgHRs_var)" = "r(PerfSat, HR_Var)",
+            "cor(.$PerformanceSatisfaction, .$MvgAvgHRs_median)" = "r(PerfSat, HR_Med)",
+            "cor(.$Motivation, .$MvgAvgHRs_var)" = "r(Mot, HR_Var)",
+            "cor(.$Motivation, .$MvgAvgHRs_median)" = "r(Mot, HR_Med)",
+            "cor(.$Flow, .$MvgAvgHRs_var)" = "r(Flow, HR_Var)",
+            "cor(.$Flow, .$MvgAvgHRs_median)" = "r(Flow, HR_Med)")) -> corr_hearts
+```
+<p>
+We investigate on the correlations between these measures.
+Below you can see an overview showing all strong correlations (|r| > 0,8) that have been observed between the heart and the survey data and the corresponding participants.
+<p>
+variable pairs|   strong neg. corr   | strong pos corr. 
+----------| ----------- | ---------- | --------
+EmoVal, HR_Var|     E, I     |   
+EmoVal, HR_Med|           |   D, L, M   
+EmoAr, HR_Var|          |   C, E, I
+EmoArl, HR_Med|     E     |         
+PerfSat, HR_Var|    A, C, E   |  
+PerfSat, HR_Med|    J, M   |         
+Mot, HR_Var|         |  
+Mot, HR_Med|         | A, E, L
+Flow, HR_Var|    D, E   | 
+Flow, HR_Med|         | C, K
+<p>
+To sum up, the following combinations of variables are reported most with strong correlations:
+
+  * `EmotionalValence` and `heart rate variance` (negative)
+  * `EmotionalValence` and `heart rate median` (positive)
+  * `EmotionalArousal` and `heart rate variance` (positive)
+  * `Motivation` and `heart rate median` (positive)
+  * `PerformanceSatisfaction` and `heart rate variance` (negative)
+  
+  <p>
+  <p>
+Taking  participant A as an example, `PerformanceSatisfaction` seems to be negatively correlated with the variance of the avg Heart rate. Let's have a look on the plot: <br/>
+```{r}
+
+daten.compare %>%
+  filter(participantID=="A" & StateLogic=="TASK_ONE") %>%
+  ggplot() + 
+    geom_ribbon(aes(x=StateOrder, ymax=scale(MvgAvgHRs_var), ymin=scale(PerformanceSatisfaction)), fill="green", alpha=.5) +
+    geom_point( aes(x=StateOrder, y=scale(MvgAvgHRs_var)), color="blue") + 
+    geom_point( aes(x=StateOrder, y=scale(PerformanceSatisfaction)), color="red") + 
+    labs(title = "Performamce satisfaction and heart rate variance (both scaled) \n over state orders for participant A",
+       caption = "blue is variance, red performance satisfaction level, green is the difference between the levels",
+       x = "StateOrder", y = "levels")
+```
+<br/>
+Beautiful, but that is almost too good to be true.
+
+<br/>
+
+Exploration: some more eye-balling <br/>
+Looking at the density and distribution of the data points, we can assume, that a lower heart rate variance is associated with higher `Flow`. But there is still a lot of noise with that.
+However, if you take the `EmotionalValence` into account, you can see quite clearly, that a positive valence seem to lead to flow more easily than a low valence. <br/>
+```{r echo=FALSE}
+ggplot(daten.compare) + geom_hline(yintercept = 20) + geom_vline(xintercept = 3.75) + geom_point(aes(x=Flow, y=MvgAvgHRs_var, size=2, color=EmoValence))
+```
+
+                
+<br/>  
+
+**Exploitation: Which variables explain Flow?** <br/>
+
+```{r}
+daten.compare %>%
+  select(-participantID, -StateLogic, -StateOrder) %>%
+  scale() %>%
+  cbind(select(daten.compare, participantID, StateLogic, StateOrder), . ) -> daten.cluster
+
+# removed insignifficant values (starting with all variables in the data set) -> only EmoValence and Motivation seem to dictate Flow
+fit <- lm(Flow ~  EmoValence + Motivation, data=daten.cluster)
+summary(fit) # show results
+```
+<p>
+
+
+### Exercise 04 - Clustering
+
+<br/>
+
+1. The first cluster analysis is carried out using only significant variables, i.e. `Flow`, `EmotionalValence` and `Motivation.`
+2. The second cluster analysis is carried out to check on Skill and Challenge.
+<br/>
+Kicking things off by choosing the correct number of clusters:
+```{r}
+#Clustering
+
+set.seed(12356)
+daten.cluster.explanatory <- data.frame(Flow = daten.cluster$Flow, EmoValence=daten.cluster$EmoValence, Motivation=daten.cluster$Motivation)
+daten.cluster.skillChallenge <- data.frame(SkillChallenge=daten.cluster$TaskSkill/daten.cluster$TaskDifficulty)
+
+minClusters<-1
+maxClusters<-8
+measures.explanatory <- data.frame(clusters = minClusters:maxClusters)
+measures.skillChallenge <- data.frame(clusters = minClusters:maxClusters)
+
+for (i in minClusters:maxClusters){
+  measures.explanatory[which(measures.explanatory$clusters== i), "withinSS"] <-sum(kmeans(daten.cluster.explanatory, centers = i, iter.max=100)$withinss)
+  measures.explanatory[which(measures.explanatory$clusters== i), "betweenSS"] <- kmeans(daten.cluster.explanatory, centers = i, iter.max=100)$betweenss
+  measures.skillChallenge[which(measures.skillChallenge$clusters== i), "withinSS"] <-sum(kmeans(daten.cluster.skillChallenge, centers = i, iter.max=100)$withinss)
+  measures.skillChallenge[which(measures.skillChallenge$clusters== i), "betweenSS"] <- kmeans(daten.cluster.skillChallenge, centers = i, iter.max=100)$betweenss
+}
+```
+```{r echo=FALSE}
+ggplot(measures.explanatory) +
+   geom_line(aes(x = clusters, y = withinSS, color="withinSS")) +
+   geom_point(aes(x = clusters, y = withinSS, color="withinSS")) +
+   geom_line(aes(x = clusters, y = betweenSS,  color="betweenSS")) +
+   geom_point(aes(x = clusters, y = betweenSS, color="betweenSS"))
+
+ggplot(measures.skillChallenge) +
+   geom_line(aes(x = clusters, y = withinSS, color="withinSS")) +
+   geom_point(aes(x = clusters, y = withinSS, color="withinSS")) +
+   geom_line(aes(x = clusters, y = betweenSS,  color="betweenSS")) +
+   geom_point(aes(x = clusters, y = betweenSS, color="betweenSS"))
+```
+<br/>
+By elbow method: 3 or 6 Clusters could get us good results for the second analysis. <p>
+By elbow method: 3 or 4 Clusters could get us good results for the third analysis. <p>
+
+Well, let's see what other approaches suggest:
+
+<p>
+
+By Silhuette method:
+
+```{r}
+# Silhuette method
+pamk(daten.cluster.explanatory)$nc
+pamk(daten.cluster.skillChallenge)$nc
+# recommended number of clusters by optimum average silhuette width:
+```
+Second analysis: 2 clusters! Flow and No-Flow, maybe?
+Third analysis: 10 clusters. We only have two tasks... (maybe this hints at participants perceiving tasks very differently?)
+
+```{r echo=FALSE}
+# daten.cluster.skillChallenge %>%
+#  cbind(participantID = daten.cluster$participantID,.) -> daten.cluster.skillChallenge
+
+# ggplot(daten.cluster.skillChallenge) + geom_point(aes(x=participantID, y=SkillChallenge))
+#<br/>
+#We argue, that a very detailed clustering here, does not yield any value. By eye-balling, we identify 2 main clusters (and a lot of noise, unfortunately...), one with flow, and one without!
+#However, SkillChallenge does not seem to affect Flow very much in this plot.
+```
+
+
+<p>
+
+Checking the Calinski Criterium:
+
+```{r echo=FALSE}
+# calinski criterum
+fit_1 <- cascadeKM(daten.cluster.explanatory, minClusters, maxClusters, iter = 1000)
+plot(fit_1, sortg = TRUE, grpmts.plot = TRUE)
+
+fit_2 <- cascadeKM(daten.cluster.explanatory, minClusters, maxClusters, iter = 1000)
+plot(fit_1, sortg = TRUE, grpmts.plot = TRUE)
+```
+<br/>
+The overview of Calinski Values indicates that fewer clusters may be a good idea as opposed to more. However, this is only a heuristic view.
+Also for the second analysis, 6 Clusters is acknowledged here as a mediocre solution.
+<br/>
+
+For the first analysis (with explanatory variables), we choose 2 clusters. We hope to sort out participants that got into flow more often than others. (Flow/No-Flow clusters)<br/>
+For the second analysis (with skillChallenge balance), we choose 2 clusters. Maybe we will see a clustering of task 1 and 2? <br/> 
+
+```{r}
+set.seed(12356)
+# aggregating result
+daten.cluster %>%
+  select(participantID, StateLogic, StateOrder) -> clust.result
+
+# CLUSTER ANALYSIS 1: EXPLANATORY - Optimale Anzahl Cluster = 2
+kmeans(daten.cluster.explanatory, centers = 2, iter.max=100)$cluster %>%
+  cbind(clust.result, "ExplanatoryCluster"=.) -> clust.result
+
+# CLUSTER ANALYSIS 2: SKILLCHALLENGE - Optimale Anzahl Cluster = 2
+kmeans(daten.cluster.skillChallenge, centers = 2, iter.max=100)$cluster %>%
+  cbind(clust.result, "SkillChallengeCluster"=.) -> clust.result
+
+daten.cluster %>%
+  select(-MvgAvgHRs_mean, -MvgAvgHRs_median) %>%
+  merge(clust.result, by=c("participantID", "StateLogic", "StateOrder")) -> clust.result
+```
+<br/>
+So, what did we find out? Let's eye-ball: <p>
+
+Starting with the explanatory cluster analysis (focus on flow/no-flow): <br/>
+Taking our example from the heart data, participant B. We assuemed that the second round of task one and the first round of task two were in flow, due to the small variance in heart rate. It seems, that these data points have in fact something in common, they are clustered together. Also, the complete task two of B seems to be in more or less flow by heart rate. (Looking at other participants backs this assumption.)
+```{r}
+clust.result %>%
+  filter(participantID=="B") %>%
+  select(participantID, StateLogic, StateOrder, Flow, ExplanatoryCluster)
+```
+<br/>
+We derive an assumption about the meaning of the clusters, starting with the 2-cluster analysis of the explanatory variables: <p>
+Analysis|   Cluster   | Assumption | Comment
+----------| ----------- | ---------- | --------
+Explanatory |      1      |   No-Flow  | Especially, due to a difficult task (see plot above)
+Explanatory |      2      |    Flow    | including skill-challenge-balance (see plot above)
+
+<br/>
+The following plot shows the accuracy of the clustering: (only so few outliers, yeahy!)
+
+```{r}
+ggplot(clust.result) +
+  geom_point(aes(x=Flow, y=as.factor(ExplanatoryCluster), color=as.factor(ExplanatoryCluster)), size=2) + 
+  scale_colour_manual(values=c("red","blue"), labels=c("Cluster 1: No-Flow", "Cluster 2: Flow"), name="")
+```
+<br/>
+
+<p>
+
+So, let's see if we can derive some more from that: Taking a look at `StateLogic` and `StateOrder` did not yield any fancy results, rather uniformly distributed (sort of at least).
+So, we examine the participants on how often they were clustered to have had `Flow`. For that, we just count per participant how often they were sorted into each cluster and derive the mean value (normalised, i.e. Cluster 1 (No-Flow) equals value -1 and Cluster 2 (Flow) equals value 1). The resulting value is a **qualitative** assessment, if a participant tends to get into `Flow` more often (positive value) or if she has a hard time (negative value). 
+
+```{r}
+clust.result %>%
+  group_by(participantID, ExplanatoryCluster) %>%
+  count() %>% 
+  group_by(participantID) %>%
+  mutate(ExplanatoryCluster=ifelse(ExplanatoryCluster == 1, -1, 1)) %>%
+  summarise(AverageFlowExperience = weighted.mean(ExplanatoryCluster,  n)) 
+
+```
+<br/>
+
+So, there is a group of participants (C, H, I) that was in the `Flow` very often. Also, there is a group (A, B, J, M) that were sometimes in the `Flow` and sometimes not, and then there is a group of participants (D, E, K, L) that had a really hard time getting into the `Flow.` K never did actually... (at least according to the cluster analysis!) This is inline with the findings from the correlation analysis!
+
+<p>
+
+Now, we take a look on a skill-challenge-plot of the cluster analysis at hand. <br/>
+While there is some noise, we might derive that balanced tasks (along the angle bisector) were more often sorted into the "Flow" Cluster. Remember, we did not use skill or difficulty as variables in this analysis! Therefore, the clustering of `Flow` seems to reflect the Skill-Challenge-Balance (more or less)!
+
+```{r}
+ggplot(clust.result) +
+  geom_abline() +
+  geom_point(aes(x=TaskSkill, y=TaskDifficulty, size=as.factor(ExplanatoryCluster), color=Flow)) + 
+  scale_size_manual(values=c(2.5,7.5), labels=c("Cluster 1: No-Flow", "Cluster 2:Flow"), name="")
+```
+<br/>
+
+<p>
+<br/>
+Next up, Skill-Challenge-Balance-Cluster analysis:<br/> Indeed, we find Balance-Clusters here again (but different)!
+
+```{r}
+ggplot(clust.result) +
+  geom_point(aes(x=TaskSkill, y=TaskDifficulty, color=as.factor(SkillChallengeCluster)), size=2) + 
+  geom_line(data=data.frame(x=c(0,1.75), y=c(-0.3,0)), aes(x,y)) + geom_line(data=data.frame(x=c(0,-1), y=c(-0.3,-2)), aes(x,y)) +
+  geom_line(data=data.frame(x=c(-0.15,0.75), y=c(0,2)), aes(x,y)) + geom_line(data=data.frame(x=c(-0.15,-2.5), y=c(0,-0.4)), aes(x,y)) +
+  scale_colour_manual(values=c("blue","red"), labels=c("Cluster 1: Skill-Challenge-Balance", "Cluster 2: Skill-Challenge-Imbalance"), name="")
+```
+<br/>
+
+We examine, if a given task was perceived harder than the other, and in fact: 
+
+```{r echo=FALSE}
+ggplot(clust.result) +
+  geom_point(aes(x=Flow, y=StateLogic, color=as.factor(SkillChallengeCluster)), size=2) + 
+  scale_colour_manual(values=c("blue","red"), labels=c("Cluster 1: Skill-Challenge-Balance", "Cluster 2: Skill-Challenge-Imbalance"), name="")
+```
+<br/>
+We will take the same measure as for cluster analysis 1 to assess the implications on the tasks: <br/>
+The resulting value is a **qualitative** assessment, if a task was perceived to be more balanced (positive value) or to be more imbalanced (negative value). 
+```{r}
+clust.result %>%
+  group_by(SkillChallengeCluster, StateLogic) %>%
+  count() %>%
+  group_by(StateLogic) %>%
+  mutate(SkillChallengeCluster=ifelse(SkillChallengeCluster == 1, 1, -1)) %>% # this time we switch value association, because the cluster indecies are inverse to their meaning.
+  summarise(AverageBalanceExperience = weighted.mean(SkillChallengeCluster,  n)) 
+
+```
+<p>
+It seems, that task one was perceived to be pretty imbalanced to the skill of the participants than task two. 
+The balancing of task two was medicore (for some okay, for some not), resulting in nearly zero. <br/>
+The plot also suggests, that an on average more balanced task can lead to `Flow` more often. On the other hand, variance is higher here. <br/>
+However, taking the experiment into account, where task one was a maths exercise and task two continuous (interrupted) writing, the results do not surprise.
+In Maths (Task one), either you can or you can't. It seems that there comes the imbalance from. 
+Writing people may get into `Flow` more easily due to the continuous nature of the task. Being interrupted may explain the higher variance seen in the `Flow` of that task.
+
+<br/> 
+In this notebook, we only took a look at clusters with metric variables. In some cases you have to work also with categorical variables. Therefore you can use two functions, which allow you to work only with categorical variables (k-modes) and with mixed data (k-prototypes). We tested these function by clustering non-sense clusters. Of course we will not show these clusters, but you can take a look at the programming of these methodes in the  notebook.
+```{r eval=FALSE, include=FALSE}
+set.seed(123)
+daten.state.cluster <- data.frame(daten.task$StateLogic, daten.task$EmoValence)
+
+
+minClusters<-2
+maxClusters<-6
+measures.two <-data.frame(clusters = minClusters:maxClusters)
+
+for (i in minClusters:maxClusters){
+  measures.two[which(measures.two$clusters== i), "withinSS"] <-sum(kproto(daten.state.cluster, k = i, iter.max=100)$withinss)
+  measures.two[which(measures.two$clusters== i), "tot.withinSS"] <- kproto(daten.state.cluster, k = i, iter.max=100)$tot.withinss
+}
+
+ggplot(measures.two) +
+   geom_line(aes(x = clusters, y = withinSS, color="withinSS")) +
+   geom_point(aes(x = clusters, y = withinSS, color="withinSS")) +
+   geom_line(aes(x = clusters, y = tot.withinSS,  color="tot.withinSS")) +
+   geom_point(aes(x = clusters, y = tot.withinSS, color="tot.withinSS"))
+# Wow, that looks hideous!
+
+# Optimale Anzahl Cluster = 4
+kproto(daten.state.cluster, k = 4, iter.max=100)
+```
+<br/>
+
+
+### Exercise 05 - Classification
+
+Taking a step back from the cluster of `Flow` and Tasks, we revise our findings on the heart data:<br/>
+
+  * `EmotionalValence` and `heart rate variance` (negative)
+  * `EmotionalValence` and `heart rate median` (positive)
+  * `EmotionalArousal` and `heart rate variance` (positive)
+  * `Motivation` and `heart rate median` (positive)
+  * `PerformanceSatisfaction` and `heart rate variance` (negative)
+
+<br/>
+In the following section, we will investigate if we can classify, e.g. `EmotionalArousal` or `EmotionalValence` by building a decision/regression tree of the heart rate. We base our decisions for explanatory variables on the findings above.
+
+#### 5.1) Classification Tree
+
+We will first build two simple decision trees: <br/> 
+ 1. `EmotionalValence` ~ `heart rate variance`<br/>
+ 2. `EmotionalArousal` ~ `heart rate median`<br/>
+
+We first split our data into a training set (80%) and a test set (20%). 
+
+```{r}
+set.seed(12356)
+medianValence <- median(daten.cluster$EmoValence)
+daten.cluster %>% 
+  select(EmoValence, MvgAvgHRs_var,  MvgAvgHRs_median) %>%
+  mutate(EmoValence = as.factor(as.numeric(EmoValence>medianValence))) -> daten.class.val
+
+
+daten.class.val$id <- 1:nrow(daten.class.val)
+daten.class.val.train <-  dplyr::sample_frac(daten.class.val, .75) 
+daten.class.val.test <- dplyr::anti_join(daten.class.val, daten.class.val.train, by = 'id') 
+daten.class.val.train <- select(daten.class.val.train, -id)
+daten.class.val.test <- select(daten.class.val.test, -id)
+```
+<br/>
+We first tried to use the presented C5.0 algorithm, but that didn't worked out for us:
+```{r}
+tree_val = C5.0(EmoValence ~ ., data=daten.class.val.train) # build
+summary(tree_val)
+predictions_val = predict(tree_val, newdata = daten.class.val.test) # classify 
+table(predictions_val, daten.class.val.test$EmoValence) # evaluate
+
+```
+<br/>
+
+Therefore, we give the partitioning and decision tree package `rpart` a shot:
+```{r}
+tree_val <- rpart(EmoValence ~ ., daten.class.val.train)
+rpart.plot(tree_val)
+# summary(tree_val)
+```
+<br>
+Each node shows
+
+* the predicted class (0 = low `EmotionalValence` or 1 = high `EmotionalValence`),
+* the predicted probability of high `EmotionalValence`, 
+* the percentage of observations in the node.
+<br>
+At first glance, not too bad of a model. If we test it, we see:
+
+```{r}
+probabilities_val = rpart.predict(tree_val, newdata = daten.class.val.test) # classify 
+eval_val <- table(rowMaxs(probabilities_val)-1, daten.class.val.test$EmoValence) # evaluate
+
+data.frame(error=((eval_val[1,2]+eval_val[2,1])/nrow(daten.class.val.test)), precision=(eval_val[1,1]/(eval_val[1,1]+eval_val[2,1])), recall=(eval_val[1,1]/(eval_val[1,1]+eval_val[1,2]))) %>%
+  transform(F1_score=(2*(precision*recall)/(precision+recall)))
+
+```
+<br/> 
+A mediore model, to say the least.
+The sample size is far to small to get a reliable model. 
+We end up with an error of >35% of this model for the test set, since the tree simply mirrors the distribution of the training set.
+<p>
+With other train/test splits, we had also way worse results.
+<p>
+<br/>
+For the `EmotionalArousal` (we skip the C5.0 try):
+```{r}
+set.seed(12356)
+medianArousal <- median(daten.cluster$EmoArousal)
+daten.cluster %>% 
+  select(EmoArousal, MvgAvgHRs_var) %>%
+  mutate(EmoArousal = as.factor(as.numeric(EmoArousal>medianArousal))) -> daten.class.ar
+
+
+daten.class.ar$id <- 1:nrow(daten.class.ar)
+daten.class.ar.train <-  dplyr::sample_frac(daten.class.ar, .75) 
+daten.class.ar.test <- dplyr::anti_join(daten.class.ar, daten.class.ar.train, by = 'id') 
+daten.class.ar.train <- select(daten.class.ar.train, -id)
+daten.class.ar.test <- select(daten.class.ar.test, -id)
+```
+```{r eval=FALSE, include=FALSE}
+tree_ar = C5.0(EmoArousal ~ ., data=daten.class.ar.train) # build
+summary(tree_ar)
+predictions_ar = predict(tree_ar, newdata = daten.class.ar.test) # classify 
+table(predictions_ar, daten.class.ar.test$EmoArousal) # evaluate
+
+```
+```{r}
+tree_ar <- rpart(EmoArousal ~ ., daten.class.ar.train)
+rpart.plot(tree_ar)
+# summary(tree_val)
+```
+<br>
+Each node shows
+
+* the predicted class (0 = low `EmotionalValence` or 1 = high `EmotionalValence`),
+* the predicted probability of high `EmotionalValence`, 
+* the percentage of observations in the node.
+<br>
+We test again:
+```{r}
+probabilities_ar = rpart.predict(tree_ar, newdata = daten.class.ar.test) # classify 
+eval_ar <- table(rowMaxs(probabilities_ar)-1, daten.class.ar.test$EmoArousal) # evaluate
+
+data.frame(error=((eval_ar[1,2]+eval_ar[2,1])/nrow(daten.class.ar.test)),precision=(eval_ar[1,1]/(eval_ar[1,1]+eval_ar[2,1])), recall=(eval_ar[1,1]/(eval_ar[1,1]+eval_ar[1,2]))) %>%
+  transform(F1_score=(2*(precision*recall)/(precision+recall)))
+```
+<br/>
+The resulting model is quite okay, given the circumstances. However, way worse models come out of different train/test splits...
+...
+<p>
+<br/>
+
+#### 5.2) Regression Tree
+Is a regression tree better to explain `EmotionalValence`?
+
+```{r}
+set.seed(12356)
+
+daten.cluster %>% 
+  select(EmoValence, MvgAvgHRs_var,  MvgAvgHRs_median) %>%
+  mutate(id=1:nrow(.)) -> daten.reg
+
+daten.reg.train <-  dplyr::sample_frac(daten.reg, .75) 
+daten.reg.test <- dplyr::anti_join(daten.reg, daten.reg.train, by = 'id') 
+daten.reg.train <- select(daten.reg.train, -id)
+daten.reg.test <- select(daten.reg.test, -id)
+```
+```{r}
+tree_e_reg <- rpart(EmoValence ~ ., data = daten.reg.train, method  = "anova") # build
+# summary(tree_e_reg)
+rpart.plot(tree_e_reg)
+# plotcp(tree_e_reg)
+```
+<br/>
+Seems good at first glance! Let's test:
+```{r}
+predictions_e_reg = predict(tree_e_reg, newdata = daten.reg.test) # classify 
+eval_reg <- table(predictions_e_reg, daten.reg.test$EmoValence) # evaluate
+```
+<br/> Right, we don't have a binary mapping here. It's continuous.
+So what does the result mean? 
+```{r}
+# MAE
+sum((daten.reg.test$EmoValence - predictions_e_reg))
+# avg MAE
+sum((daten.reg.test$EmoValence - predictions_e_reg))/nrow(daten.reg.test)
+# percentage of flow value interval 
+sum((daten.reg.test$EmoValence - predictions_e_reg))/nrow(daten.reg.test)/(max(daten.reg$EmoValence)-min(daten.reg$EmoValence))
+```
+<br/>
+We could compute the overall MAE as a KPI. 
+However, we don't have any other number to compare it against, so that doesn't tell us much. If we consider the average deviation of 0.28 (MAE/|testset|), and without any more knowledge, we assume that to be an medicore deviation, given the possible range of the scaled `Flow` value [-1.9, 1.5] (0.65 translate to roughly 8% of the total scale), and the lack of traning examples.
+<p>
+With other train/test splits, we had also way worse results.
+<p>
+Let's investigate, if the regression tree did a correct classification. (Ough, that hurt, didn't it? Just bear with us, though :) ) What we mean by that is the following: <br/>
+The tree predicts a `Flow` value for a datum. We can now check, if the value predicted by the regression tree is actually close to the label value OR if another possible prediction of the tree would have been a better choice. Basically, checking if the tree had the right direction at least.
+```{r}
+eval <- data.frame(cbind(label=daten.reg.test$EmoValence,prediction=predictions_e_reg)) 
+
+eval %>%
+  transform(delta.vhigh=abs(0.653104763005056 -label)) %>%
+  transform(delta.mhigh=abs(0.371448949528654	-label)) %>%
+  transform(delta.mlow=abs(-0.218870769127366	-label)) %>%
+  transform(delta.vlow=abs(-0.838572917218753	-label)) %>%
+  select(delta.vhigh, delta.mhigh, delta.mlow, delta.vlow) %>%
+  as.matrix() %>%
+  rowMins() %>%
+  cbind(nearestClass=.,eval ) %>%
+  select(label, prediction, nearestClass) %>%
+  mutate(nearestClass=ifelse(nearestClass==1, as.numeric(0.653104763005056), ifelse(nearestClass==2, as.numeric(0.371448949528654), ifelse(nearestClass==3, as.numeric(-0.218870769127366), ifelse(nearestClass==4, as.numeric(-0.838572917218753), nearestClass))))) %>%
+  round(digits = 2) %>% # for readablity's sake
+  transform(correcMagnituteOfEmoValence=abs(prediction-nearestClass)<1e-7) %>%# floating point numbers... argh.
+  filter(correcMagnituteOfEmoValence==F)
+
+```
+<br/>
+We see that there were 11 out of 16 test data not really sortet into the right direction/magnitude of emotional valence <p>
+Meaning:<br/> 
+
+* 5 out of 16 test data were roughly assigned to a reasonable value, and thus predicted "correct", i.e. as good as the regression tree could be. <br/>
+* 11 out of 16 test data was not predicted in the right magnitude of `EmotionalValence`
+<br/>
+So, we can we say that the regression tree is worse than the simple decision tree (probably due to the small sample size): error = 11/16 > 7/16 (from decision tree)?
+<p>
+
+Not really. Both trees sort a datum to a class: 
+
+* Decision trees sort into discrete classes
+* Regression trees assign a value ("class")
+<br/>  
+
+However, the granularity of a regression tree is much higher than of a decision tree. In this example, we have two classes for a decision tree, while we have four classes for the regression tree. The trees yield different levels of informational precision with their classification:
+
+* When a decision tree missclassifies a datum, we only know that binary fact, i.e. was wrong.
+* Regression trees can yield additional information on "how much" a test datum is missclassified.
+  
+<br/><br/><br/>
+
+## References
